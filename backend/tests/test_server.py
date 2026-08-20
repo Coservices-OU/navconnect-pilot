@@ -75,3 +75,16 @@ def test_post_trip_rejects_invalid_trip_id():
             assert "RFC-4122 UUID" in response.json()["detail"]
 
     asyncio.run(exercise())
+
+
+def test_start_page_serves_html():
+    async def exercise():
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            response = await client.get("/start")
+            assert response.status_code == 200
+            assert "fetch" in response.text
+            assert "/trips" in response.text
+
+    asyncio.run(exercise())

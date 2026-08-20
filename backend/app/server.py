@@ -11,6 +11,7 @@ from .store import store
 
 app = FastAPI(title="Navigation Connect pilot")
 TEMPLATE = Path(__file__).parent / "templates" / "tracking.html"
+START_TEMPLATE = Path(__file__).parent / "templates" / "start_trip.html"
 
 
 class TripRequest(BaseModel):
@@ -51,6 +52,17 @@ async def create_trip(request: TripRequest) -> dict[str, Any]:
             f"{config.TRACKING_BASE_URL.rstrip('/')}/t/{trip.share_token}"
         ),
     }
+
+
+@app.get("/start", response_class=HTMLResponse)
+async def start_trip_page() -> str:
+    """No-install driver entry point: dispatch sends this URL (with
+    ?lat=..&lng=.. query params) per job via SMS/WhatsApp/CRM. The page
+    itself calls POST /trips and redirects the phone browser straight to
+    the returned driver_link — no APK, no Play Protect warning, works on
+    iOS and Android identically. See WB-P000051 decision notes.
+    """
+    return START_TEMPLATE.read_text(encoding="utf-8")
 
 
 @app.get("/t/{share_token}", response_class=HTMLResponse)
