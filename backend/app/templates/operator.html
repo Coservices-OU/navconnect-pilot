@@ -1,0 +1,44 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Navigation Connect - operator view</title><style>
+body{font-family:system-ui,sans-serif;margin:0;padding:1.5rem;background:#f5f6f7;color:#17202a}
+h1{font-size:1.1rem;margin:0 0 1rem}
+table{width:100%;border-collapse:collapse;background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.1)}
+th,td{padding:.5rem .75rem;text-align:left;border-bottom:1px solid #e5e7eb;font-size:.85rem}
+th{background:#eef1f4;font-weight:600}
+.empty{color:#7a8592;padding:1rem;font-size:.9rem}
+.state{font-weight:600}
+.state-ENROUTE{color:#1a73e8}
+.state-COMPLETE{color:#1a8f4c}
+a{color:#1a73e8;text-decoration:none}
+.meta{color:#7a8592;font-size:.75rem;margin-top:1rem}
+</style></head><body>
+<h1>Navigation Connect &mdash; active trips</h1>
+<table id="tbl"><thead><tr><th>Vehicle</th><th>Customer ref</th><th>State</th><th>Updated</th><th>Created</th><th>Tracking link</th></tr></thead><tbody></tbody></table>
+<div class="empty" id="empty" style="display:none">No trips yet.</div>
+<div class="meta" id="meta"></div>
+<script>
+async function refresh(){
+  try {
+    const r = await fetch('/trips');
+    const data = await r.json();
+    const body = document.querySelector('#tbl tbody');
+    body.innerHTML = '';
+    document.getElementById('empty').style.display = data.trips.length ? 'none' : 'block';
+    for (const t of data.trips) {
+      const tr = document.createElement('tr');
+      const state = t.latest ? (t.latest.state || 'unknown') : 'not started';
+      tr.innerHTML = `<td>${t.vehicle_label || '-'}</td><td>${t.customer_ref || '-'}</td>` +
+        `<td class="state state-${state}">${state}</td>` +
+        `<td>${t.latest && t.latest.updated_at ? new Date(t.latest.updated_at).toLocaleTimeString() : '-'}</td>` +
+        `<td>${new Date(t.created_at).toLocaleString()}</td>` +
+        `<td><a href="${t.tracking_url}" target="_blank">open</a></td>`;
+      body.appendChild(tr);
+    }
+    document.getElementById('meta').textContent = 'Last refreshed ' + new Date().toLocaleTimeString() + ' - auto-refresh every 5s';
+  } catch (e) {
+    document.getElementById('meta').textContent = 'Refresh failed: ' + e;
+  }
+}
+refresh();
+setInterval(refresh, 5000);
+</script>
+</body></html>

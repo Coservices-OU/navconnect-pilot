@@ -119,3 +119,16 @@ def test_list_trips_operator_endpoint():
             assert "tracking_url" in match
 
     asyncio.run(exercise())
+
+
+def test_operator_page_serves_html():
+    async def exercise():
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            response = await client.get("/operator")
+            assert response.status_code == 200
+            assert "/trips" in response.text
+            assert "refresh" in response.text
+
+    asyncio.run(exercise())

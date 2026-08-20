@@ -12,6 +12,7 @@ from .store import store
 app = FastAPI(title="Navigation Connect pilot")
 TEMPLATE = Path(__file__).parent / "templates" / "tracking.html"
 START_TEMPLATE = Path(__file__).parent / "templates" / "start_trip.html"
+OPERATOR_TEMPLATE = Path(__file__).parent / "templates" / "operator.html"
 
 
 class TripRequest(BaseModel):
@@ -77,6 +78,16 @@ async def list_trips() -> dict[str, Any]:
         })
     trips.sort(key=lambda item: item["created_at"], reverse=True)
     return {"count": len(trips), "trips": trips}
+
+
+@app.get("/operator", response_class=HTMLResponse)
+async def operator_page() -> str:
+    """Read-only live view of active trips for Coservices operators, polling
+    GET /trips every 5s. Deliberately NOT wired into dash.coservices.ee yet --
+    that app is the shared France Workboard dashboard, actively edited by other
+    tasks (T2700/T2728/T2729); merging there needs coordination first. This is
+    a standalone, single-writer page inside navconnect-pilot itself."""
+    return OPERATOR_TEMPLATE.read_text(encoding="utf-8")
 
 
 @app.get("/start", response_class=HTMLResponse)
