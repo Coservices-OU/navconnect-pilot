@@ -1,9 +1,22 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Starting navigation</title><style>body{font-family:system-ui,sans-serif;margin:0;padding:2rem 1.25rem;background:#f5f6f7;color:#17202a;text-align:center}main{max-width:26rem;margin:auto}.spinner{width:2.5rem;height:2.5rem;border:4px solid #dfe3e6;border-top-color:#1a73e8;border-radius:50%;margin:1.5rem auto;animation:spin 0.8s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}.err{color:#b3261e;font-weight:600}</style></head><body><main><h1>Starting navigation …</h1><div class="spinner" id="spinner"></div><p id="msg">Please wait.</p></main><script>
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Start navigation</title><style>
+body{font-family:system-ui,sans-serif;margin:0;padding:2rem 1.25rem;background:#f5f6f7;color:#17202a;text-align:center}
+main{max-width:26rem;margin:auto}
+.spinner{width:2.5rem;height:2.5rem;border:4px solid #dfe3e6;border-top-color:#1a73e8;border-radius:50%;margin:1.5rem auto;animation:spin 0.8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.err{color:#b3261e;font-weight:600}
+.go{display:inline-block;margin-top:1.5rem;padding:.9rem 2rem;background:#1a73e8;color:#fff;font-size:1.05rem;font-weight:600;border-radius:8px;text-decoration:none}
+.go:active{background:#155ab6}
+</style></head><body><main>
+<h1 id="title">Starting navigation &hellip;</h1>
+<div class="spinner" id="spinner"></div>
+<p id="msg">Please wait.</p>
+</main><script>
 const params = new URLSearchParams(window.location.search);
 const lat = parseFloat(params.get('lat'));
 const lng = parseFloat(params.get('lng'));
 const vehicleLabel = params.get('vehicle_label');
 const customerRef = params.get('customer_ref');
+const title = document.getElementById('title');
 const msg = document.getElementById('msg');
 const spinner = document.getElementById('spinner');
 function fail(text){ spinner.style.display='none'; msg.textContent = text; msg.classList.add('err'); }
@@ -23,7 +36,15 @@ if (Number.isNaN(lat) || Number.isNaN(lng)) {
     .then(r => { if (!r.ok) throw new Error('backend_error'); return r.json(); })
     .then(data => {
       if (data && data.driver_link) {
-        window.location.href = data.driver_link;
+        spinner.style.display = 'none';
+        title.textContent = 'Ready';
+        msg.innerHTML = '';
+        const a = document.createElement('a');
+        a.href = data.driver_link;
+        a.className = 'go';
+        a.id = 'go-link';
+        a.textContent = 'Open navigation';
+        msg.appendChild(a);
       } else {
         fail('The server did not return a navigation link.');
       }
