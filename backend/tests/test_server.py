@@ -88,3 +88,34 @@ def test_start_page_serves_html():
             assert "/trips" in response.text
 
     asyncio.run(exercise())
+
+
+def test_list_trips_operator_endpoint():
+    async def exercise():
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            create_resp = await client.post(
+                "/trips",
+                json={
+                    "destination_lat": 54.68,
+                    "destination_lng": 25.28,
+                    "vehicle_label": "VAN-1",
+                    "customer_ref": "TEST-REF",
+                },
+            )
+            assert create_resp.status_code == 200
+            created_trip_id = create_resp.json()["trip_id"]
+
+            list_resp = await client.get("/trips")
+            assert list_resp.status_code == 200
+            body = list_resp.json()
+            assert body["count"] >= 1
+            match = next(
+                item for item in body["trips"] if item["trip_id"] == created_trip_id
+            )
+            assert match["vehicle_label"] == "VAN-1"
+            assert match["customer_ref"] == "TEST-REF"
+            assert "tracking_url" in match
+
+    asyncio.run(exercise())

@@ -73,6 +73,10 @@ class TripStore:
                 del self._trips[key]
             return len(keys)
 
+    def list_all(self) -> list["TrackedTrip"]:
+        with self._lock:
+            return [trip for trip in self._trips.values() if not trip.is_expired]
+
     def stats(self) -> dict[str, Any]:
         with self._lock:
             return {

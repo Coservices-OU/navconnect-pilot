@@ -54,6 +54,31 @@ async def create_trip(request: TripRequest) -> dict[str, Any]:
     }
 
 
+@app.get("/trips")
+async def list_trips() -> dict[str, Any]:
+    """Operator-facing view: what is happening right now, across all trips
+    tracked in this process's memory (pilot has no persistent DB yet).
+    Includes the internal tracking share_token/URL since this endpoint is
+    for Coservices operators only, not customers -- do not expose this
+    route outside the Tailscale-bound pilot host."""
+    trips = []
+    for trip in store.list_all():
+        trips.append({
+            "trip_id": trip.trip_id,
+            "vehicle_label": trip.vehicle_label,
+            "customer_ref": trip.customer_ref,
+            "created_at": trip.created_at.isoformat(),
+            "expires_at": trip.expires_at.isoformat(),
+            "update_count": trip.update_count,
+            "tracking_url": (
+                f"{config.TRACKING_BASE_URL.rstrip('/')}/t/{trip.share_token}"
+            ),
+            "latest": trip.latest.to_public_dict() if trip.latest else None,
+        })
+    trips.sort(key=lambda item: item["created_at"], reverse=True)
+    return {"count": len(trips), "trips": trips}
+
+
 @app.get("/start", response_class=HTMLResponse)
 async def start_trip_page() -> str:
     """No-install driver entry point: dispatch sends this URL (with
