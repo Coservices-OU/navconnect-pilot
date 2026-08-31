@@ -93,7 +93,7 @@ def test_start_page_serves_html():
             # Navigation Connect's action_token deep link may require a
             # genuine user gesture rather than a script redirect.
             assert "Open navigation" in response.text
-            assert "createElement('a')" in response.text
+            assert "createElement('button')" in response.text
 
     asyncio.run(exercise())
 

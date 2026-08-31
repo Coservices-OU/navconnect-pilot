@@ -49,6 +49,7 @@ async def create_trip(request: TripRequest) -> dict[str, Any]:
     return {
         "trip_id": trip.trip_id,
         "driver_link": result.get("driver_link"),
+        "driver_link_fallback": result.get("driver_link_fallback"),
         "tracking_url": (
             f"{config.TRACKING_BASE_URL.rstrip('/')}/t/{trip.share_token}"
         ),

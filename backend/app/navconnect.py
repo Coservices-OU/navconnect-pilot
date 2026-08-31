@@ -43,6 +43,14 @@ and real tokens -- not a token validity issue). build_driver_link() now
 emits an intent:// URI so a plain <a href> tap on Android still carries the
 extra, with S.browser_fallback_url degrading to the old https link
 everywhere else.
+
+UPDATE 2026-08-31 (later, same task): real phone test showed the intent://
+link does *nothing* when tapped (no app switch, no error) -- some mobile
+browsers/in-app webviews silently no-op on intent:// instead of following
+it, so Chrome's own S.browser_fallback_url (Chrome-only behaviour) isn't a
+reliable enough safety net. create_trip() now also returns a separate
+driver_link_fallback (the plain https link) so the frontend can implement
+its own browser-agnostic fallback (see start_trip.html).
 """
 
 import logging
@@ -167,6 +175,9 @@ def create_trip(
             "driver_link": build_driver_link(
                 destination_lat, destination_lng, "DRY_RUN_FAKE_TOKEN", android_app_id
             ),
+            "driver_link_fallback": build_driver_link(
+                destination_lat, destination_lng, "DRY_RUN_FAKE_TOKEN"
+            ),
             "dry_run": True,
             "request_body_preview": body,
         }
@@ -204,9 +215,13 @@ def create_trip(
     driver_link = data.get("driverLink") or data.get("driver_link") or build_driver_link(
         destination_lat, destination_lng, action_token, android_app_id
     )
+    driver_link_fallback = build_driver_link(
+        destination_lat, destination_lng, action_token
+    )
     return {
         "trip_id": trip_id,
         "driver_link": driver_link,
+        "driver_link_fallback": driver_link_fallback,
         "dry_run": False,
         "response": data,
     }
