@@ -28,6 +28,21 @@ Google's official docs
 Also unverified: androidAppId alone (without iosAppId) is accepted with
 HTTP 200 - iosAppId claimed to not be strictly mandatory when there is no
 iOS app.
+
+UPDATE 2026-08-31 (WB-P000051-T2762, evidence 3596/3600): confirmed in GCP
+Console that app "ee.coservices.drivertracking" IS Verified for Navigation
+Connect (Keys and credentials > Apps submitted to Navigation Connect API).
+So app verification was NOT the blocker. The actual gap: the official docs
+(launch-navigation-app) only document launching via a native Android
+Intent carrying Intent.EXTRA_REFERRER_NAME="android-app://<packageName>"
+plus intent.setPackage("com.google.android.apps.maps") -- our plain
+https://www.google.com/maps/dir/... link never carried that referrer extra,
+so Maps silently treated the session as unattributed and failed with a
+generic "can't connect, check internet" error (identical for DRY_RUN fake
+and real tokens -- not a token validity issue). build_driver_link() now
+emits an intent:// URI so a plain <a href> tap on Android still carries the
+extra, with S.browser_fallback_url degrading to the old https link
+everywhere else.
 """
 
 import logging
@@ -90,13 +105,31 @@ def build_driver_link(
     destination_lat: float | None,
     destination_lng: float | None,
     action_token: str | None,
+    android_app_id: str | None = None,
 ) -> str | None:
     if destination_lat is None or destination_lng is None or action_token is None:
         return None
-    return (
-        "https://www.google.com/maps/dir/?api=1&destination="
+    query = (
+        "api=1&destination="
         f"{quote(str(destination_lat))},{quote(str(destination_lng))}"
         f"&dir_action=navigate&action_token={quote(action_token)}"
+    )
+    https_url = f"https://www.google.com/maps/dir/?{query}"
+    if not android_app_id:
+        return https_url
+    # See module docstring "UPDATE 2026-08-31": a plain https link does not
+    # carry Intent.EXTRA_REFERRER_NAME, which the docs say is required to
+    # attribute the session to our VERIFIED app. Use Android's intent://
+    # URI scheme so a normal <a href> tap still forces the real Maps app
+    # (package=) and carries the referrer extra. Falls back automatically
+    # to the https URL (S.browser_fallback_url) on desktop/iOS/no Maps app.
+    referrer = quote(f"android-app://{android_app_id}", safe="")
+    fallback = quote(https_url, safe="")
+    return (
+        "intent://maps.google.com/dir/?" + query +
+        "#Intent;scheme=https;package=com.google.android.apps.maps;"
+        f"S.android.intent.extra.REFERRER_NAME={referrer};"
+        f"S.browser_fallback_url={fallback};end"
     )
 
 
@@ -132,7 +165,7 @@ def create_trip(
         return {
             "trip_id": trip_id,
             "driver_link": build_driver_link(
-                destination_lat, destination_lng, "DRY_RUN_FAKE_TOKEN"
+                destination_lat, destination_lng, "DRY_RUN_FAKE_TOKEN", android_app_id
             ),
             "dry_run": True,
             "request_body_preview": body,
@@ -169,7 +202,7 @@ def create_trip(
     )
     action_token = (data.get("authToken") or {}).get("token")
     driver_link = data.get("driverLink") or data.get("driver_link") or build_driver_link(
-        destination_lat, destination_lng, action_token
+        destination_lat, destination_lng, action_token, android_app_id
     )
     return {
         "trip_id": trip_id,
