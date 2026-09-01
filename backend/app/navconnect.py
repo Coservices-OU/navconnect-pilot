@@ -28,12 +28,6 @@ Google's official docs
 Also unverified: androidAppId alone (without iosAppId) is accepted with
 HTTP 200 - iosAppId claimed to not be strictly mandatory when there is no
 iOS app.
-
-UPDATE 2026-09-01 (WB-P000051-T2762): a real CreateTrip call now succeeds
-(HTTP 200) via the gcloud CLI access-token fallback below, and the
-response shape claim above is CONFIRMED correct against a real response:
-{"name", "authToken": {"token", "expireTime"}, "state", "execution",
-"createTime", "updateTime", "config"} -- no driverLink field.
 """
 
 import logging
@@ -53,13 +47,38 @@ class NavConnectError(RuntimeError):
 def _get_access_token() -> tuple[str, str | None]:
     """Get a real OAuth access token for the CreateTrip call.
 
-    Tries Application Default Credentials first (the normal path on a real
-    GCP VM). This France host is NOT a GCP VM, so ADC is usually absent --
-    in that case we fall back to the already-authenticated `gcloud` CLI
-    session on this host (see WB-P000051-T2767) and ask it for a short-lived
-    access token via `gcloud auth print-access-token`. The token is used
-    in-process only and is never logged or persisted.
+    UPDATE 2026-09-01 (WB-P000051-T2762, real E2E test): user reported the
+    /start page taking noticeably long to load. Measured it: a plain
+    google.auth.default() call on THIS host takes ~12s to fail (it tries
+    to reach the GCE metadata server at 169.254.169.254, which times out
+    slowly rather than refusing fast, since this France host is not a GCP
+    VM -- a fact this docstring already stated but the code didn't act on)
+    before falling back to the working `gcloud auth print-access-token`
+    path, which alone takes ~0.6s. That's a 12s tax on every single
+    request for a path we already know never succeeds here. Fix: try the
+    known-working gcloud CLI path FIRST; only fall back to ADC if that
+    fails (e.g. if this ever runs on a real GCP VM in future, or the
+    gcloud CLI session expires).
     """
+    import subprocess
+
+    try:
+        result = subprocess.run(
+            ["gcloud", "auth", "print-access-token"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=True,
+        )
+        token = result.stdout.strip()
+        if token:
+            return token, None
+        cli_exc = NavConnectError(
+            "gcloud auth print-access-token returned an empty token"
+        )
+    except Exception as exc:
+        cli_exc = exc
+
     try:
         import google.auth
         import google.auth.transport.requests
@@ -70,26 +89,9 @@ def _get_access_token() -> tuple[str, str | None]:
         credentials.refresh(google.auth.transport.requests.Request())
         return credentials.token, project_id
     except Exception as adc_exc:
-        import subprocess
-
-        try:
-            result = subprocess.run(
-                ["gcloud", "auth", "print-access-token"],
-                capture_output=True,
-                text=True,
-                timeout=10,
-                check=True,
-            )
-        except Exception as cli_exc:
-            raise NavConnectError(
-                f"No ADC ({adc_exc}) and gcloud CLI fallback failed ({cli_exc})"
-            ) from cli_exc
-        token = result.stdout.strip()
-        if not token:
-            raise NavConnectError(
-                "gcloud auth print-access-token returned an empty token"
-            )
-        return token, None
+        raise NavConnectError(
+            f"gcloud CLI fallback failed ({cli_exc}) and no ADC ({adc_exc})"
+        ) from adc_exc
 
 
 class _GcloudCliCredentials:
@@ -165,9 +167,22 @@ def build_driver_link(
 ) -> str | None:
     if destination_lat is None or destination_lng is None or action_token is None:
         return None
+    # FOUND 2026-09-01 (WB-P000051-T2762, real E2E walking test): Google's
+    # own docs (developers.google.com/maps/documentation/navigation/connect/
+    # launch-navigation-app) state verbatim: "If the driver navigates in a
+    # non-driving mode, Navigation Connect won't return telemetry updates or
+    # traffic information." Our link had no travelmode param, so Maps chose
+    # a mode itself -- during walking tests it silently produced ZERO
+    # telemetry (state stuck at NEW, traveledDistanceMeters: 0) even though
+    # real active navigation with live rerouting was happening on-screen.
+    # This was the root cause of every "no data" result across all real
+    # test trips so far -- not a pipeline/GCP bug. Force driving mode
+    # explicitly so this pilot (built for delivery/moving-truck drivers)
+    # always gets telemetry.
     query = (
         "api=1&destination="
         f"{quote(str(destination_lat))},{quote(str(destination_lng))}"
+        f"&travelmode=driving"
         f"&dir_action=navigate&action_token={quote(action_token)}"
     )
     https_url = f"https://www.google.com/maps/dir/?{query}"
