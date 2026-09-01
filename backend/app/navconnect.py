@@ -28,29 +28,6 @@ Google's official docs
 Also unverified: androidAppId alone (without iosAppId) is accepted with
 HTTP 200 - iosAppId claimed to not be strictly mandatory when there is no
 iOS app.
-
-UPDATE 2026-08-31 (WB-P000051-T2762, evidence 3596/3600): confirmed in GCP
-Console that app "ee.coservices.drivertracking" IS Verified for Navigation
-Connect (Keys and credentials > Apps submitted to Navigation Connect API).
-So app verification was NOT the blocker. The actual gap: the official docs
-(launch-navigation-app) only document launching via a native Android
-Intent carrying Intent.EXTRA_REFERRER_NAME="android-app://<packageName>"
-plus intent.setPackage("com.google.android.apps.maps") -- our plain
-https://www.google.com/maps/dir/... link never carried that referrer extra,
-so Maps silently treated the session as unattributed and failed with a
-generic "can't connect, check internet" error (identical for DRY_RUN fake
-and real tokens -- not a token validity issue). build_driver_link() now
-emits an intent:// URI so a plain <a href> tap on Android still carries the
-extra, with S.browser_fallback_url degrading to the old https link
-everywhere else.
-
-UPDATE 2026-08-31 (later, same task): real phone test showed the intent://
-link does *nothing* when tapped (no app switch, no error) -- some mobile
-browsers/in-app webviews silently no-op on intent:// instead of following
-it, so Chrome's own S.browser_fallback_url (Chrome-only behaviour) isn't a
-reliable enough safety net. create_trip() now also returns a separate
-driver_link_fallback (the plain https link) so the frontend can implement
-its own browser-agnostic fallback (see start_trip.html).
 """
 
 import logging
@@ -125,12 +102,6 @@ def build_driver_link(
     https_url = f"https://www.google.com/maps/dir/?{query}"
     if not android_app_id:
         return https_url
-    # See module docstring "UPDATE 2026-08-31": a plain https link does not
-    # carry Intent.EXTRA_REFERRER_NAME, which the docs say is required to
-    # attribute the session to our VERIFIED app. Use Android's intent://
-    # URI scheme so a normal <a href> tap still forces the real Maps app
-    # (package=) and carries the referrer extra. Falls back automatically
-    # to the https URL (S.browser_fallback_url) on desktop/iOS/no Maps app.
     referrer = quote(f"android-app://{android_app_id}", safe="")
     fallback = quote(https_url, safe="")
     return (
@@ -139,6 +110,38 @@ def build_driver_link(
         f"S.android.intent.extra.REFERRER_NAME={referrer};"
         f"S.browser_fallback_url={fallback};end"
     )
+
+
+def build_waze_link(
+    destination_lat: float | None,
+    destination_lng: float | None,
+    action_token: str | None = None,
+    android_app_id: str | None = None,
+) -> str | None:
+    """Build a Waze deep link per Google's Navigation Connect API docs
+    (developers.google.com/maps/documentation/navigation/connect/launch-navigation-app).
+
+    UPDATE 2026-09-01 (WB-P000051-T2762): user reported Google Maps opened
+    correctly via the intent:// link, but no app chooser offering other
+    installed navigation apps (Waze) appeared -- expected, since the Maps
+    intent explicitly pins package=com.google.android.apps.maps, which
+    bypasses the Android chooser entirely. Google's own docs confirm Waze
+    is a first-class Navigation Connect target with its own universal link
+    (https://waze.com/ul) and its own attribution extra
+    (EXTRA_REFERRER_NAME), separate from the Maps intent:// link -- there is
+    no single generic intent that offers both under one chooser while
+    keeping attribution for either. Fix: expose Waze as its own explicit
+    link/button next to the Maps one, same pattern as driver_link_fallback.
+    A plain https://waze.com/ul link is a real Android App Link (like
+    Maps'), so a genuine <a href> tap (no JS redirect) is enough to trigger
+    it without needing intent:// syntax.
+    """
+    if destination_lat is None or destination_lng is None:
+        return None
+    query = f"ll={quote(str(destination_lat))}%2C{quote(str(destination_lng))}&navigate=yes"
+    if action_token:
+        query += f"&external_trip_token={quote(action_token)}"
+    return f"https://waze.com/ul?{query}"
 
 
 def create_trip(
@@ -176,6 +179,9 @@ def create_trip(
                 destination_lat, destination_lng, "DRY_RUN_FAKE_TOKEN", android_app_id
             ),
             "driver_link_fallback": build_driver_link(
+                destination_lat, destination_lng, "DRY_RUN_FAKE_TOKEN"
+            ),
+            "driver_link_waze": build_waze_link(
                 destination_lat, destination_lng, "DRY_RUN_FAKE_TOKEN"
             ),
             "dry_run": True,
@@ -218,10 +224,14 @@ def create_trip(
     driver_link_fallback = build_driver_link(
         destination_lat, destination_lng, action_token
     )
+    driver_link_waze = build_waze_link(
+        destination_lat, destination_lng, action_token
+    )
     return {
         "trip_id": trip_id,
         "driver_link": driver_link,
         "driver_link_fallback": driver_link_fallback,
+        "driver_link_waze": driver_link_waze,
         "dry_run": False,
         "response": data,
     }

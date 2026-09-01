@@ -86,10 +86,14 @@ def test_start_page_serves_html():
             assert response.status_code == 200
             assert "fetch" in response.text
             assert "/trips" in response.text
-            # WB-P000051-T2762 (2026-08-31, round 3): reverted to two real
-            # <a href> taps (no JS redirect) -- see start_trip.html comment
-            # for why the JS auto-fallback made things worse.
-            assert "Open navigation" in response.text
+            # WB-P000051-T2780: real phone test showed "site can't be
+            # reached" for BOTH real and fake action_token when the page
+            # auto-redirected via window.location.href -- switched to a
+            # tapped <a href> button, since Android app-link resolution for
+            # Navigation Connect's action_token deep link may require a
+            # genuine user gesture rather than a script redirect.
+            assert "Open in Google Maps" in response.text
+            assert "Open in Waze" in response.text
             assert "createElement('a')" in response.text
 
     asyncio.run(exercise())

@@ -132,3 +132,31 @@ def test_create_trip_real_call_uses_bearer_token(monkeypatch):
     assert captured["headers"]["Authorization"] == "Bearer tok-123"
     assert captured["headers"]["X-Goog-User-Project"] == "quota-proj"
     assert "real-action-token" in result["driver_link"]
+
+
+def test_build_waze_link_has_coords_and_navigate_flag():
+    import app.navconnect as navconnect
+
+    link = navconnect.build_waze_link(54.6841, 25.2858, "tok-abc")
+    assert link.startswith("https://waze.com/ul?")
+    assert "ll=54.6841%2C25.2858" in link
+    assert "navigate=yes" in link
+    assert "external_trip_token=tok-abc" in link
+
+
+def test_build_waze_link_missing_coords_returns_none():
+    import app.navconnect as navconnect
+
+    assert navconnect.build_waze_link(None, None) is None
+
+
+def test_dry_run_includes_waze_link(monkeypatch):
+    import app.navconnect as navconnect
+    import uuid
+
+    monkeypatch.setattr(navconnect.config, "DRY_RUN", True)
+    trip_id = str(uuid.uuid4())
+    result = navconnect.create_trip(
+        trip_id, destination_lat=1.0, destination_lng=2.0
+    )
+    assert result["driver_link_waze"].startswith("https://waze.com/ul?")
