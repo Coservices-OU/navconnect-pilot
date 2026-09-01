@@ -106,3 +106,44 @@ def test_missing_eta_is_public_none():
     public = TripUpdate.from_payload({}).to_public_dict()
     assert public["eta"] is None
     assert public["eta_is_computed"] is False
+
+
+def test_unwraps_createdTrip_envelope():
+    payload = {
+        "createdTrip": {
+            "name": "projects/461566048811/trips/23d0f372-1b60-484a-9e16-6bfb4e1221ae",
+            "state": "NEW",
+            "execution": {},
+        }
+    }
+    update = TripUpdate.from_payload(payload)
+    assert update.trip_id == "23d0f372-1b60-484a-9e16-6bfb4e1221ae"
+    assert update.state == "NEW"
+
+
+def test_unwraps_updatedTrip_envelope():
+    payload = {
+        "updatedTrip": {
+            "name": "projects/461566048811/trips/abc-123",
+            "state": "ACTIVE",
+            "execution": {
+                "location": {"point": {"latitude": 54.68, "longitude": 25.28}},
+            },
+        }
+    }
+    update = TripUpdate.from_payload(payload)
+    assert update.trip_id == "abc-123"
+    assert update.latitude == 54.68
+    assert update.longitude == 25.28
+
+
+def test_unknown_wrapper_key_falls_back_to_generic_unwrap():
+    payload = {"endedTrip": {"name": "projects/1/trips/zzz", "state": "COMPLETE"}}
+    update = TripUpdate.from_payload(payload)
+    assert update.trip_id == "zzz"
+
+
+def test_no_envelope_still_works_unchanged():
+    payload = {"name": "projects/1/trips/direct-id", "state": "NEW"}
+    update = TripUpdate.from_payload(payload)
+    assert update.trip_id == "direct-id"

@@ -9,7 +9,15 @@ log = logging.getLogger(__name__)
 
 def callback(message) -> None:
     try:
-        update = TripUpdate.from_payload(json.loads(message.data))
+        raw = json.loads(message.data)
+        # TEMP 2026-09-01 (WB-P000051-T2762): Google's docs only say
+        # messages arrive in "a standard message envelope" without
+        # documenting its exact shape. Logging the raw payload once so we
+        # can fix TripUpdate.from_payload's field paths against the real
+        # schema instead of guessing.
+        log.warning("RAW Pub/Sub payload: %s", json.dumps(raw)[:4000])
+        log.warning("RAW Pub/Sub attributes: %s", dict(message.attributes))
+        update = TripUpdate.from_payload(raw)
         if store.apply_update(update) is None:
             log.warning("Received update for unknown trip: %s", update.trip_id)
         message.ack()

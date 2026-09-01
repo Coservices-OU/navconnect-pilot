@@ -83,6 +83,30 @@ class TripUpdate:
 
     @classmethod
     def from_payload(cls, payload: dict[str, Any]) -> "TripUpdate":
+        # FOUND 2026-09-01 (WB-P000051-T2762, real E2E test): Google's docs
+        # say Pub/Sub messages arrive in "a standard message envelope"
+        # without documenting its exact shape. Captured a REAL message on
+        # trip creation: {"createdTrip": {"name": ..., "state": "NEW", ...}}
+        # -- confirmed a matching "updatedTrip" wrapper is used for
+        # progress events per Google's "Handle trip data" doc
+        # (developers.google.com/maps/documentation/navigation/connect/handle-trip-data).
+        # Unwrap known wrapper keys first; fall back to a generic
+        # single-key-dict unwrap for any other trip lifecycle event
+        # (ended/completed/cancelled) we haven't observed a real sample of
+        # yet, rather than silently failing to parse those too.
+        known_wrappers = ("createdTrip", "updatedTrip", "endedTrip", "completedTrip", "trip")
+        for wrapper_key in known_wrappers:
+            inner = payload.get(wrapper_key)
+            if isinstance(inner, dict):
+                payload = inner
+                break
+        else:
+            if len(payload) == 1:
+                (only_value,) = payload.values()
+                if isinstance(only_value, dict) and (
+                    "name" in only_value or "state" in only_value
+                ):
+                    payload = only_value
         lat = (
             "execution.location.point.latitude",
             "lastLocation.latLng.latitude",

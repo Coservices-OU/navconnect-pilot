@@ -28,6 +28,12 @@ Google's official docs
 Also unverified: androidAppId alone (without iosAppId) is accepted with
 HTTP 200 - iosAppId claimed to not be strictly mandatory when there is no
 iOS app.
+
+UPDATE 2026-09-01 (WB-P000051-T2762): a real CreateTrip call now succeeds
+(HTTP 200) via the gcloud CLI access-token fallback below, and the
+response shape claim above is CONFIRMED correct against a real response:
+{"name", "authToken": {"token", "expireTime"}, "state", "execution",
+"createTime", "updateTime", "config"} -- no driverLink field.
 """
 
 import logging
@@ -84,6 +90,71 @@ def _get_access_token() -> tuple[str, str | None]:
                 "gcloud auth print-access-token returned an empty token"
             )
         return token, None
+
+
+class _GcloudCliCredentials:
+    """A minimal, auto-refreshing google-auth Credentials implementation
+    backed by the already-authenticated `gcloud` CLI session on this host.
+
+    FOUND 2026-09-01 (WB-P000051-T2762, real E2E test): pubsub_v1's
+    SubscriberClient() uses google.auth.default() (ADC) by default, which
+    fails on this host with "Your default credentials were not found" --
+    the exact same ADC gap _get_access_token() above already works around
+    for the REST CreateTrip call via `gcloud auth print-access-token`. A
+    plain one-shot token string isn't enough here though: the Pub/Sub
+    streaming pull is long-lived and the token expires in ~1h, so this
+    wraps the same CLI fallback in a real refreshable Credentials object
+    (google-auth calls .refresh() itself whenever .valid is False).
+    """
+
+    def __init__(self) -> None:
+        self.token: str | None = None
+        self.expiry = None
+
+    @property
+    def expired(self) -> bool:
+        import datetime
+
+        return self.expiry is None or datetime.datetime.utcnow() >= self.expiry
+
+    @property
+    def valid(self) -> bool:
+        return self.token is not None and not self.expired
+
+    def refresh(self, request) -> None:  # noqa: ARG002 - google-auth API shape
+        import datetime
+        import subprocess
+
+        result = subprocess.run(
+            ["gcloud", "auth", "print-access-token"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=True,
+        )
+        token = result.stdout.strip()
+        if not token:
+            raise NavConnectError(
+                "gcloud auth print-access-token returned an empty token"
+            )
+        self.token = token
+        self.expiry = datetime.datetime.utcnow() + datetime.timedelta(minutes=50)
+
+    def apply(self, headers: dict, token: str | None = None) -> None:  # noqa: ARG002
+        headers["authorization"] = f"Bearer {token or self.token}"
+
+    def before_request(self, request, method, url, headers) -> None:  # noqa: ARG002
+        if not self.valid:
+            self.refresh(request)
+        self.apply(headers)
+
+
+def get_gcloud_cli_credentials() -> "_GcloudCliCredentials":
+    """Build Pub/Sub-compatible credentials from the gcloud CLI fallback,
+    for use where ADC is broken (see _GcloudCliCredentials docstring)."""
+    creds = _GcloudCliCredentials()
+    creds.refresh(None)
+    return creds
 
 
 def build_driver_link(

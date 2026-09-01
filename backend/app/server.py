@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 from typing import Any
 import uuid
@@ -7,9 +8,51 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
 from . import config, navconnect
+from . import receiver as pubsub_receiver
 from .store import store
 
+log = logging.getLogger(__name__)
+
 app = FastAPI(title="Navigation Connect pilot")
+_pubsub_subscriber_future = None
+
+
+@app.on_event("startup")
+async def _start_pubsub_listener() -> None:
+    """Start the Navigation Connect Pub/Sub subscriber IN-PROCESS, sharing
+    this same module's `store` singleton.
+
+    FOUND 2026-09-01 (WB-P000051-T2762, real E2E test): app/receiver.py's
+    run() was written to be launched as a fully separate process/script.
+    Since app/store.py's `store` is a plain in-process dict-backed
+    singleton (no external DB/Redis for this pilot), a separate receiver
+    process would hold its OWN empty store -- it would never see trips
+    created via this server's POST /trips, and any update it applied would
+    be invisible to /operator and /trips here. Fix: run the same
+    subscriber callback inside this process instead. pubsub_v1's
+    .subscribe() manages its own background threads and returns
+    immediately (non-blocking) -- we deliberately do NOT call
+    future.result() (that blocks forever and is only correct for a
+    standalone script's main thread).
+    """
+    global _pubsub_subscriber_future
+    if config.DRY_RUN:
+        log.info("DRY_RUN active -- not starting the Pub/Sub listener.")
+        return
+    try:
+        from google.cloud import pubsub_v1
+
+        creds = navconnect.get_gcloud_cli_credentials()
+        client = pubsub_v1.SubscriberClient(credentials=creds)
+        _pubsub_subscriber_future = client.subscribe(
+            config.NAVCONNECT_SUBSCRIPTION, callback=pubsub_receiver.callback
+        )
+        log.warning(
+            "Pub/Sub listener started in-process on %s",
+            config.NAVCONNECT_SUBSCRIPTION,
+        )
+    except Exception as exc:
+        log.error("Failed to start Pub/Sub listener: %s", exc)
 TEMPLATE = Path(__file__).parent / "templates" / "tracking.html"
 START_TEMPLATE = Path(__file__).parent / "templates" / "start_trip.html"
 OPERATOR_TEMPLATE = Path(__file__).parent / "templates" / "operator.html"
