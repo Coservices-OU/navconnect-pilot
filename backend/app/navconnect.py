@@ -62,9 +62,28 @@ def _get_access_token() -> tuple[str, str | None]:
     """
     import subprocess
 
+    # FOUND 2026-09-07 (WB-P000051-T2762, root cause of "token verification
+    # is failing" reported by Google's own Navigation Connect PM): this used
+    # to call plain `gcloud auth print-access-token`, which returns a token
+    # for whatever gcloud CLI identity happens to be ACTIVE on this shared
+    # France host at call time -- confirmed via `gcloud auth list` to be
+    # user:info@marketingin.co.uk (an unrelated agency-shared login, active
+    # project namiko-marketingin), NOT the navigation-connect-pilot service
+    # account this pilot was built for. IAM check confirmed
+    # roles/navigationconnect.admin on coservices-navconnect is granted ONLY
+    # to the service account; the ambient user only has roles/owner, which
+    # is broad enough that CreateTrip still returned HTTP 200 (masking the
+    # bug), but the issued action_token is then scoped to the wrong caller
+    # identity, so Google Maps token verification fails silently and the
+    # trip never leaves NEW. Fix: always explicitly impersonate the pilot's
+    # own service account, so this is correct regardless of which human
+    # identity is ambiently logged into gcloud on this shared host.
     try:
         result = subprocess.run(
-            ["gcloud", "auth", "print-access-token"],
+            [
+                "gcloud", "auth", "print-access-token",
+                f"--impersonate-service-account={config.SERVICE_ACCOUNT}",
+            ],
             capture_output=True,
             text=True,
             timeout=10,
@@ -72,9 +91,9 @@ def _get_access_token() -> tuple[str, str | None]:
         )
         token = result.stdout.strip()
         if token:
-            return token, None
+            return token, config.NAVCONNECT_PROJECT_ID
         cli_exc = NavConnectError(
-            "gcloud auth print-access-token returned an empty token"
+            "gcloud auth print-access-token (impersonated) returned an empty token"
         )
     except Exception as exc:
         cli_exc = exc
@@ -128,7 +147,10 @@ class _GcloudCliCredentials:
         import subprocess
 
         result = subprocess.run(
-            ["gcloud", "auth", "print-access-token"],
+            [
+                "gcloud", "auth", "print-access-token",
+                f"--impersonate-service-account={config.SERVICE_ACCOUNT}",
+            ],
             capture_output=True,
             text=True,
             timeout=10,
@@ -137,7 +159,7 @@ class _GcloudCliCredentials:
         token = result.stdout.strip()
         if not token:
             raise NavConnectError(
-                "gcloud auth print-access-token returned an empty token"
+                "gcloud auth print-access-token (impersonated) returned an empty token"
             )
         self.token = token
         self.expiry = datetime.datetime.utcnow() + datetime.timedelta(minutes=50)

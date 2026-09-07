@@ -72,7 +72,12 @@ def test_get_access_token_falls_back_to_gcloud_cli(monkeypatch):
 
     token, project = navconnect._get_access_token()
     assert token == "fake-cli-token"
-    assert project is None
+    # UPDATED 2026-09-07 (WB-P000051-T2762 root-cause fix): the gcloud CLI
+    # path now always impersonates the pilot's own service account, so on
+    # success it returns config.NAVCONNECT_PROJECT_ID as the quota project
+    # instead of None (None was only ever correct for the old, buggy
+    # behavior of using whichever ambient user identity was logged in).
+    assert project == navconnect.config.NAVCONNECT_PROJECT_ID
 
 
 def test_get_access_token_raises_when_both_paths_fail(monkeypatch):
