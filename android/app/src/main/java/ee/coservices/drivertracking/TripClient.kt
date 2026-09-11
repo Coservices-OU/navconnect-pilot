@@ -7,6 +7,22 @@ import java.net.URL
 data class TripResponse(
     val tripId: String,
     val driverLink: String,
+    // FIX 2026-09-11 (WB-P000051-T2762, "codex" repair per Torben Spitzer /
+    // Google Navigation Connect PM confirming application ID is MANDATORY
+    // for token auth, and per updated docs at
+    // developers.google.com/maps/documentation/navigation/connect/launch-navigation-app#app-id):
+    // driverLink is a pre-composed "intent://...#Intent;...;end" URI string
+    // with the app-id referrer already baked into the URI fragment via
+    // S.android.intent.extra.REFERRER_NAME. MainActivity was wrapping THAT
+    // string in a second native Intent + putExtra(EXTRA_REFERRER_NAME, ...),
+    // which double-encodes/conflicts with the URI-embedded referrer and is
+    // not how Android's real Intent.EXTRA_REFERRER_NAME attribution works
+    // (Uri.parse() does not decode "intent://...#Intent;...;end" into real
+    // Intent extras -- only Intent.parseUri(..., URI_INTENT_SCHEME) does
+    // that). driverLinkFallback is the bare, unwrapped HTTPS Maps URL with
+    // NO referrer baked in, meant to be opened via a single real native
+    // Intent that carries the referrer as an actual EXTRA_REFERRER_NAME.
+    val driverLinkFallback: String,
     val trackingUrl: String
 ) {
     companion object {
@@ -14,6 +30,7 @@ data class TripResponse(
             return TripResponse(
                 tripId = requiredString(json, "trip_id"),
                 driverLink = requiredString(json, "driver_link"),
+                driverLinkFallback = requiredString(json, "driver_link_fallback"),
                 trackingUrl = requiredString(json, "tracking_url")
             )
         }

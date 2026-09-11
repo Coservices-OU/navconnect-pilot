@@ -48,7 +48,17 @@ class MainActivity : Activity() {
         executor.execute {
             try {
                 val response = TripClient().createTrip(latitude, longitude)
-                runOnUiThread { openDriverLink(response.driverLink) }
+                // FIX 2026-09-11 (WB-P000051-T2762, "codex" repair): use the bare,
+                // un-wrapped driverLinkFallback URL here, not the pre-composed
+                // intent://...#Intent;...;end driverLink string. openDriverLink()
+                // below builds its own single native Intent and attaches the real
+                // Intent.EXTRA_REFERRER_NAME extra itself -- that is the mandatory
+                // app-id attribution per Google's Navigation Connect docs. Passing
+                // the already-encoded driverLink here caused a double-wrap (Uri.parse()
+                // does not decode an intent:// URI's #Intent;...;end fragment into
+                // real extras), which is the likely cause of every prior real-device
+                // test staying stuck in NEW with no consent dialog.
+                runOnUiThread { openDriverLink(response.driverLinkFallback) }
             } catch (error: Exception) {
                 runOnUiThread {
                     Toast.makeText(this, "Trip failed: ${error.message ?: "unknown error"}", Toast.LENGTH_LONG).show()
