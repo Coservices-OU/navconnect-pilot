@@ -1,6 +1,7 @@
 package ee.coservices.drivertracking
 
 import android.app.Activity
+import android.app.PendingIntent
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
@@ -68,8 +69,24 @@ class MainActivity : Activity() {
     }
 
     private fun openDriverLink(driverLink: String) {
+        // FIX 2026-09-14 (WB-P000051-T2762, independent-review repair): Google's
+        // own sample code for launching Navigation Connect on Android also
+        // attaches a PendingIntent under the "pendingIntent" extra key, used by
+        // Maps/Waze to power the branded "return to app" button after the trip.
+        // It was missing here (docs confirm it is required, not optional) --
+        // added per independent doc-verification review.
+        val returnIntent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        val returnPendingIntent = PendingIntent.getActivity(
+            this,
+            0,
+            returnIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
         val intent = Intent(Intent.ACTION_VIEW, Uri.parse(driverLink)).apply {
             putExtra(Intent.EXTRA_REFERRER_NAME, "android-app://$packageName")
+            putExtra("pendingIntent", returnPendingIntent)
             setPackage("com.google.android.apps.maps")
         }
         try {
