@@ -1,0 +1,9 @@
+{
+  "client_id": "https://raw.githubusercontent.com/Coservices-OU/navconnect-pilot/main/oauth/artlist-client.json",
+  "client_name": "Coservices n8n",
+  "client_uri": "https://coservices.ee",
+  "redirect_uris": ["http://localhost:8765/callback"],
+  "grant_types": ["authorization_code", "refresh_token"],
+  "response_types": ["code"],
+  "token_endpoint_auth_method": "none"
+}
